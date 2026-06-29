@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 import HeroVisual from "./HeroVisual";
 
 export default function Hero() {
@@ -50,13 +51,15 @@ export default function Hero() {
         transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
         className="relative z-10 flex flex-col sm:flex-row items-center justify-center gap-3 mb-16"
       >
-        <motion.button
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.96 }}
-          className="w-full sm:w-auto px-7 py-3.5 rounded-full bg-white text-black text-sm font-semibold tracking-tight shadow-[0_0_30px_rgba(255,255,255,0.25)] hover:shadow-[0_0_50px_rgba(255,255,255,0.4)] transition-shadow"
-        >
-          Start transferring
-        </motion.button>
+        <Link href="/login" className="w-full sm:w-auto">
+          <motion.button
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            className="w-full px-7 py-3.5 rounded-full bg-white text-black text-sm font-semibold tracking-tight shadow-[0_0_30px_rgba(255,255,255,0.25)] hover:shadow-[0_0_50px_rgba(255,255,255,0.4)] transition-shadow"
+          >
+            Start transferring
+          </motion.button>
+        </Link>
         <motion.button
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}

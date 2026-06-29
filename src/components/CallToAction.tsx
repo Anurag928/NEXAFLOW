@@ -59,7 +59,7 @@ export default function CallToAction() {
           transition={{ delay: 0.5 }}
           className="mt-6 text-sm text-muted-foreground"
         >
-          Free forever. No credit card required.
+          First 10 transfers free. No credit card required.
         </motion.p>
       </div>
     </section>

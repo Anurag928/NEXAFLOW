@@ -60,13 +60,15 @@ export default function Hero() {
             Start transferring
           </motion.button>
         </Link>
-        <motion.button
-          whileHover={{ scale: 1.04 }}
-          whileTap={{ scale: 0.96 }}
-          className="w-full sm:w-auto px-7 py-3.5 rounded-full glass-button text-sm font-medium"
-        >
-          See how it works
-        </motion.button>
+        <Link href="#how-it-works" className="w-full sm:w-auto">
+          <motion.button
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
+            className="w-full px-7 py-3.5 rounded-full glass-button text-sm font-medium"
+          >
+            See how it works
+          </motion.button>
+        </Link>
       </motion.div>
 
       {/* Hero Visual — flush to bottom, full width */}

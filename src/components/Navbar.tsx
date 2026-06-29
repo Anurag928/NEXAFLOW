@@ -72,7 +72,7 @@ export default function Navbar() {
               onClick={handleStartFree}
               className="hidden sm:inline-flex px-4 py-2 rounded-full glass-button text-sm font-medium whitespace-nowrap min-h-[40px] items-center justify-center"
             >
-              Start Free
+              Sign Up
             </motion.button>
 
             {/* Mobile Hamburger toggle */}
@@ -122,7 +122,7 @@ export default function Navbar() {
                   onClick={handleStartFree}
                   className="w-full flex items-center justify-center h-11 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 active:scale-[0.98] transition-all"
                 >
-                  <span>Start Free</span>
+                  <span>Sign Up</span>
                   <ArrowRight className="w-4 h-4 ml-1.5" />
                 </button>
               </div>

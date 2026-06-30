@@ -32,20 +32,21 @@ export default function Sidebar({
   user,
   isMobile = false,
 }: SidebarProps) {
-  const { logout } = useAuth();
+  const { logout, profile } = useAuth();
   const router = useRouter();
-  const [transfersCount, setTransfersCount] = useState(0);
 
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, "transfers"), where("userId", "==", user.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setTransfersCount(snapshot.size);
-    }, (err) => {
-      console.error("Sidebar transfers listener failed:", err);
-    });
-    return () => unsubscribe();
-  }, [user]);
+  const isPro = profile?.plan === "pro";
+  const used = profile?.credits?.used ?? 0;
+  const total = profile?.credits?.total ?? 5;
+
+  const navItems = [
+    { label: "Dashboard", href: "/dashboard", icon: NavIconDashboard },
+    { label: "New Transfer", href: "/transfer", icon: NavIconTransfer },
+    { label: "AI Memory", href: "/memory", icon: NavIconMemory },
+    { label: "History", href: "/history", icon: NavIconHistory },
+    ...(!isPro ? [{ label: "Upgrade Plan", href: "/pricing", icon: NavIconUpgrade }] : []),
+    { label: "Settings", href: "/settings", icon: NavIconSettings },
+  ];
 
   async function handleLogout() {
     await logout();
@@ -89,7 +90,12 @@ export default function Sidebar({
           )}
           {(!collapsed || isMobile) && (
             <div className="flex flex-col overflow-hidden whitespace-nowrap">
-              <span className="text-[14px] font-bold text-white tracking-tight leading-tight">NexaFlow</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[14px] font-bold text-white tracking-tight leading-tight">NexaFlow</span>
+                {isPro && (
+                  <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-white text-black tracking-widest leading-none">PRO</span>
+                )}
+              </div>
               <span className="text-[11px] text-white/40 font-medium">Your AI memory layer</span>
             </div>
           )}
@@ -97,7 +103,7 @@ export default function Sidebar({
 
         <nav className="flex-1 overflow-y-auto px-4 pb-4 no-scrollbar">
           <ul className="flex flex-col gap-1">
-            {NAV.map(({ label, href, icon: Icon }) => {
+            {navItems.map(({ label, href, icon: Icon }) => {
               const isActive = pathname === href;
               return (
                 <li key={href}>
@@ -131,16 +137,30 @@ export default function Sidebar({
         <div className="p-4 mt-auto">
           {(!collapsed || isMobile) && (
             <div className="mb-4 p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05]">
-              <div className="text-[12px] font-bold text-white/90 mb-1">Free Plan</div>
-              <div className="text-[11px] text-white/40 mb-3">{transfersCount} / 10 transfers used</div>
-              
-              <div className="w-full h-1.5 rounded-full bg-white/[0.05] mb-4 overflow-hidden">
-                <div className="h-full bg-white/70 rounded-full" style={{ width: `${Math.min((transfersCount / 10) * 100, 100)}%` }} />
+              <div className="text-[12px] font-bold text-white/90 mb-1">
+                {isPro ? "PRO PLAN" : "FREE PLAN"}
+              </div>
+              <div className="text-[11px] text-white/40 mb-3">
+                {isPro ? "Unlimited transfers" : `${used} / ${total} transfers used`}
               </div>
               
-              <button className="w-full py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-[12px] font-semibold text-white transition-colors">
-                Upgrade
-              </button>
+              {!isPro ? (
+                <>
+                  <div className="w-full h-1.5 rounded-full bg-white/[0.05] mb-4 overflow-hidden">
+                    <div 
+                      className="h-full bg-white/70 rounded-full transition-all duration-500" 
+                      style={{ width: `${Math.min((used / total) * 100, 100)}%` }} 
+                    />
+                  </div>
+                  
+                  <button 
+                    onClick={() => router.push("/pricing")}
+                    className="w-full py-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-[12px] font-semibold text-white transition-colors cursor-pointer"
+                  >
+                    Upgrade
+                  </button>
+                </>
+              ) : null}
             </div>
           )}
 
@@ -255,6 +275,14 @@ function NavIconSettings() {
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="9" cy="9" r="2.5" />
       <path d="M9 2v2m0 10v2M2 9h2m10 0h2M4.05 4.05l1.41 1.41m7.08 7.08l1.41 1.41M13.95 4.05l-1.41 1.41M5.46 12.54l-1.41 1.41" />
+    </svg>
+  );
+}
+
+function NavIconUpgrade() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
     </svg>
   );
 }

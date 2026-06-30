@@ -2,17 +2,42 @@ import { NextResponse } from "next/server";
 import { extractConversation } from "@/lib/conversationExtractor";
 import { generateContext } from "@/lib/groq";
 import { ModelId } from "@/components/ModelSelector";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { inputType, shareUrl, textValue, fileContent, targetModel } = body;
+    const { inputType, shareUrl, textValue, fileContent, targetModel, userId } = body;
 
     if (!targetModel) {
       return NextResponse.json(
         { error: "Missing destination model selection." },
         { status: 400 }
       );
+    }
+
+    // Validate credits before proceeding
+    let userDocRef: any = null;
+    let isFreeUser = true;
+
+    if (userId && userId !== "anonymous") {
+      userDocRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data() as any;
+        const plan = userData.plan || "free";
+        const credits = userData.credits || { total: 5, used: 0 };
+        isFreeUser = plan === "free";
+
+        if (isFreeUser && credits.used >= 5) {
+          return NextResponse.json({
+            success: false,
+            error: "FREE_LIMIT_REACHED",
+            message: "Your free transfers are complete. Upgrade to continue."
+          }, { status: 403 });
+        }
+      }
     }
 
     let conversationText = "";
@@ -94,7 +119,12 @@ export async function POST(request: Request) {
       targetModel
     );
 
-    console.log("Generated migration prompt:", generatedContext);
+    // Deduct credit for free user
+    if (userId && userId !== "anonymous" && isFreeUser && userDocRef) {
+      await updateDoc(userDocRef, {
+        "credits.used": increment(1)
+      });
+    }
 
     return NextResponse.json({
       success: true,

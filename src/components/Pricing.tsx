@@ -10,7 +10,7 @@ const plans = [
     price: "$0",
     desc: "For curious explorers",
     features: [
-      "10 transfers per month",
+      "5 transfers per month",
       "Basic context extraction",
       "3 AI platforms",
       "Community support",

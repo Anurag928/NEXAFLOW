@@ -3,7 +3,7 @@ import { extractConversation } from "@/lib/conversationExtractor";
 import { generateContext } from "@/lib/groq";
 import { ModelId } from "@/components/ModelSelector";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc, updateDoc, increment } from "firebase/firestore";
 import { extractMemoryFromConversation } from "@/lib/memoryExtractor";
 
 export async function POST(request: Request) {
@@ -27,6 +27,29 @@ export async function POST(request: Request) {
 
     if (!targetModel) {
       return NextResponse.json({ error: "Missing destination model." }, { status: 400 });
+    }
+
+    // Validate credits before proceeding
+    let userDocRef: any = null;
+    let isFreeUser = true;
+
+    if (userId && userId !== "anonymous") {
+      userDocRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data() as any;
+        const plan = userData.plan || "free";
+        const credits = userData.credits || { total: 5, used: 0 };
+        isFreeUser = plan === "free";
+
+        if (isFreeUser && credits.used >= 5) {
+          return NextResponse.json({
+            success: false,
+            error: "FREE_LIMIT_REACHED",
+            message: "Your free transfers are complete. Upgrade to continue."
+          }, { status: 403 });
+        }
+      }
     }
 
     // Step 8: Cache results for share link
@@ -62,6 +85,13 @@ export async function POST(request: Request) {
           completedAt: serverTimestamp(),
         });
 
+        // Deduct credit for free user
+        if (userId && userId !== "anonymous" && isFreeUser && userDocRef) {
+          await updateDoc(userDocRef, {
+            "credits.used": increment(1)
+          });
+        }
+
         console.log("[7] Result returned (from Cache clone)");
         return NextResponse.json({
           success: true,
@@ -75,14 +105,19 @@ export async function POST(request: Request) {
 
     let conversationText = "";
     let sourceModel: ModelId = "chatgpt";
+    let messagesCount = 0;
+    let hasUserMessage = true;
+    let hasAssistantMessage = true;
 
     // Step 2 & 4: Extraction with Timeouts
     if (inputType === "link") {
       if (!shareUrl) {
-        return NextResponse.json({ error: "Share URL is required." }, { status: 400 });
+        return NextResponse.json({
+          error: "NO_MESSAGES_FOUND"
+        }, { status: 400 });
       }
 
-      console.log("[2] Extraction started");
+      console.log(`[1] URL received: ${shareUrl}`);
       
       // AbortController to implement the 15-second fetch timeout limit
       const controller = new AbortController();
@@ -93,18 +128,22 @@ export async function POST(request: Request) {
         clearTimeout(fetchTimeoutId);
         conversationText = extracted.conversationText;
         sourceModel = extracted.sourceModel;
+        messagesCount = extracted.messagesCount;
+        hasUserMessage = extracted.messages.some(m => m.role === "user");
+        hasAssistantMessage = extracted.messages.some(m => m.role === "assistant");
       } catch (err: any) {
         clearTimeout(fetchTimeoutId);
-        if (err.name === "AbortError") {
-          throw new Error("Conversation processing took too long. Please try again.");
-        }
-        throw err;
+        return NextResponse.json({
+          error: "NO_MESSAGES_FOUND"
+        }, { status: 400 });
       }
-
-      console.log("[3] Extraction completed");
     } else {
-      console.log("[2] Ingesting editor input...");
+      console.log("[1] URL received: [Editor Raw Input]");
+      console.log(`[2] Platform detected: ${inputType.toUpperCase()}`);
+      console.log(`[3] Extraction method used: Direct Input Ingestion`);
+      
       conversationText = inputType === "text" ? textValue || "" : fileContent || "";
+      messagesCount = conversationText.trim().length > 0 ? 1 : 0;
       
       // Infer source model from content keywords
       const textLower = conversationText.toLowerCase();
@@ -119,16 +158,23 @@ export async function POST(request: Request) {
       } else {
         sourceModel = "chatgpt";
       }
-      console.log("[3] Ingestion completed. Inferred source model:", sourceModel);
+      console.log(`[4] Messages found: [Raw Text Block]`);
+      console.log(`[5] Extracted text length: ${conversationText.length}`);
     }
 
-    console.log("[4] Text size:", conversationText.length, "characters");
-
-    if (!conversationText.trim()) {
-      return NextResponse.json({ error: "Conversation content is empty." }, { status: 400 });
+    if (messagesCount === 0 || !conversationText || conversationText.trim().length === 0) {
+      return NextResponse.json({
+        error: "NO_MESSAGES_FOUND"
+      }, { status: 400 });
     }
 
-    console.log("[5] Groq request started");
+    console.log("[6] Groq request started");
+
+    console.log("RAW URL:", shareUrl || "");
+    console.log("EXTRACTED CONTENT:");
+    console.log(conversationText);
+    console.log("CONTENT LENGTH:", conversationText.length);
+    console.log(conversationText);
 
     // Step 4: Groq API with 30-second timeout limit
     const groqPromise = generateContext(conversationText, sourceModel, targetModel);
@@ -138,7 +184,7 @@ export async function POST(request: Request) {
 
     const result = await Promise.race([groqPromise, timeoutPromise]);
 
-    console.log("[6] Groq completed");
+    console.log(`[7] Groq response received: ${JSON.stringify(result).substring(0, 150)}...`);
 
     // Create completed document in Firestore transfers collection
     const docRef = await addDoc(collection(db, "transfers"), {
@@ -159,6 +205,13 @@ export async function POST(request: Request) {
       createdAt: serverTimestamp(),
       completedAt: serverTimestamp(),
     });
+
+    // Deduct credit for free user
+    if (userId && userId !== "anonymous" && isFreeUser && userDocRef) {
+      await updateDoc(userDocRef, {
+        "credits.used": increment(1)
+      });
+    }
 
     // Trigger memory extraction in the background (non-blocking)
     if (userId && userId !== "anonymous" && conversationText) {
@@ -184,7 +237,6 @@ export async function POST(request: Request) {
         });
     }
 
-    console.log("[7] Result returned");
     return NextResponse.json({
       success: true,
       id: docRef.id,
@@ -193,10 +245,11 @@ export async function POST(request: Request) {
 
   } catch (err: any) {
     console.error("[api/analyze] error encountered:", err.message || err);
-    return NextResponse.json(
-      { error: err.message || "Conversation processing took too long. Please try again." },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      success: false,
+      error: "EXTRACTION_FAILED",
+      message: err.message || "Unable to extract conversation messages from this link."
+    }, { status: 500 });
   }
 }
 

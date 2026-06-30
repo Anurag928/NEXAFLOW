@@ -10,7 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { doc, onSnapshot } from "firebase/firestore";
 import { logoutUser } from "@/lib/auth";
 import {
   completeUserOnboarding,
@@ -55,12 +56,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+    let unsubscribeUserDoc: (() => void) | null = null;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!active) return;
 
       setLoading(true);
       setUser(firebaseUser);
+
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+        unsubscribeUserDoc = null;
+      }
 
       if (!firebaseUser) {
         setProfile(null);
@@ -79,11 +86,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         onboardingCompleted: nextProfile.onboardingCompleted,
       });
       setLoading(false);
+
+      // Start listening to profile updates in real-time
+      unsubscribeUserDoc = onSnapshot(
+        doc(db, "users", firebaseUser.uid),
+        (snap) => {
+          if (!active) return;
+          if (snap.exists()) {
+            const data = snap.data();
+            setProfile({
+              name: data.name ?? null,
+              email: data.email ?? null,
+              photoURL: data.photoURL ?? null,
+              selectedModels: data.selectedModels ?? [],
+              purpose: data.purpose ?? "",
+              onboardingCompleted: data.onboardingCompleted === true,
+              createdAt: data.createdAt ?? null,
+              updatedAt: data.updatedAt ?? null,
+              plan: data.plan === "pro" ? "pro" : "free",
+              credits: {
+                total: data.credits?.total !== undefined ? data.credits.total : (data.plan === "pro" ? null : 5),
+                used: typeof data.credits?.used === "number" ? data.credits.used : 0,
+              },
+              subscription: {
+                status: data.subscription?.status === "active" ? "active" : "inactive",
+                expiresAt: data.subscription?.expiresAt ?? null,
+              },
+            });
+          }
+        },
+        (err) => {
+          console.error("Real-time user profile listener error:", err);
+        }
+      );
     });
 
     return () => {
       active = false;
       unsubscribe();
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+      }
     };
   }, []);
 

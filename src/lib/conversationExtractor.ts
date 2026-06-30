@@ -1,8 +1,16 @@
 import { ModelId } from "@/components/ModelSelector";
+import { extractChatGPT } from "./extractors/chatgptExtractor";
+import { extractGemini } from "./extractors/geminiExtractor";
+import { extractClaude } from "./extractors/claudeExtractor";
+import { extractDeepSeek } from "./extractors/deepseekExtractor";
+import { extractGrok } from "./extractors/grokExtractor";
+import { ExtractorMessage } from "./extractors/helper";
 
 interface ExtractedConversation {
   conversationText: string;
   sourceModel: ModelId;
+  messagesCount: number;
+  messages: ExtractorMessage[];
 }
 
 export async function extractConversation(
@@ -13,7 +21,7 @@ export async function extractConversation(
     throw new Error("Share URL is empty.");
   }
 
-  // 1. Detect source model from URL domain
+  // Detect platform and detect source model
   let sourceModel: ModelId = "chatgpt";
   const urlLower = shareUrl.toLowerCase();
 
@@ -29,8 +37,10 @@ export async function extractConversation(
     sourceModel = "grok";
   }
 
+  console.log(`[1] URL received: ${shareUrl}`);
+  console.log(`[2] Platform detected: ${sourceModel.toUpperCase()}`);
+
   try {
-    // 2. Fetch page HTML (setting headers to mimic a normal browser request)
     const response = await fetch(shareUrl, {
       signal,
       headers: {
@@ -38,7 +48,7 @@ export async function extractConversation(
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5",
       },
-      next: { revalidate: 60 }, // Cache the page for 60 seconds
+      next: { revalidate: 60 },
     });
 
     if (!response.ok) {
@@ -46,129 +56,49 @@ export async function extractConversation(
     }
 
     const html = await response.text();
+    let result = { success: false, messages: [] as ExtractorMessage[] };
 
-    // 3. Extract logic depending on the source platform
-    let extractedText = "";
     if (sourceModel === "chatgpt") {
-      // ChatGPT share pages store data in a JSON script with id "__NEXT_DATA__"
-      const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-      if (nextDataMatch && nextDataMatch[1]) {
-        try {
-          const nextData = JSON.parse(nextDataMatch[1].trim());
-          const sharedConversation = nextData.props?.pageProps?.sharedConversationResponse;
-          
-          if (sharedConversation && sharedConversation.mapping) {
-            const messages: string[] = [];
-            const mapping = sharedConversation.mapping;
-            
-            // Loop through mapping values to reconstruct conversation chronologically
-            for (const key in mapping) {
-              const node = mapping[key];
-              const message = node.message;
-              if (message && message.content && message.content.parts) {
-                const role = message.author?.role === "user" ? "User" : "Assistant";
-                const textParts = message.content.parts.filter((p: any) => typeof p === "string");
-                if (textParts.length > 0) {
-                  messages.push(`${role}: ${textParts.join("\n")}`);
-                }
-              }
-            }
-
-            if (messages.length > 0) {
-              extractedText = messages.join("\n\n");
-            }
-          }
-        } catch (jsonErr) {
-          console.warn("Failed to parse __NEXT_DATA__ from ChatGPT link, falling back to text parsing.", jsonErr);
-        }
-      }
+      result = await extractChatGPT(shareUrl, html);
+    } else if (sourceModel === "gemini") {
+      result = await extractGemini(shareUrl, html);
+    } else if (sourceModel === "claude") {
+      result = await extractClaude(shareUrl, html);
+    } else if (sourceModel === "deepseek") {
+      result = await extractDeepSeek(shareUrl, html);
+    } else if (sourceModel === "grok") {
+      result = await extractGrok(shareUrl, html);
     }
 
-    // Generic HTML Text Parser Fallback (For Claude, Gemini, or other sites)
-    if (!extractedText) {
-      // Strip script and style blocks first
-      let cleanText = html.replace(/<script[\s\S]*?<\/script>/gi, "")
-                          .replace(/<style[\s\S]*?<\/style>/gi, "");
-
-      // Strip remaining HTML tags
-      cleanText = cleanText.replace(/<[^>]*>/g, "\n");
-
-      // Clean whitespace and join lines
-      const lines = cleanText.split("\n")
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-
-      // Keep lines that look like dialogue turns or paragraphs
-      const conversationLines = lines.slice(0, 100); // Take first 100 lines to avoid too much noise
-
-      if (conversationLines.length > 5) {
-        extractedText = conversationLines.join("\n");
-      }
+    if (!result.success || result.messages.length === 0) {
+      throw new Error("Unable to extract conversation messages from this link.");
     }
 
-    if (!extractedText) {
-      throw new Error("Extracted text is too short or page lacks clean chat content.");
-    }
+    console.log(`[4] Messages found: ${result.messages.length}`);
 
-    // Apply the 50,000 character maximum limit and intelligently truncate
-    if (extractedText.length > 50000) {
-      console.log(`[conversationExtractor] Extracted text exceeds 50k chars (${extractedText.length}). Truncating...`);
-      extractedText = extractedText.substring(0, 49800) + "\n\n... [Conversation truncated for optimization] ...";
+    // Format the messages for Groq input format
+    let conversationText = result.messages.map(m => {
+      const roleLabel = m.role === "user" ? "User" : "Assistant";
+      return `${roleLabel}:\n${m.content}`;
+    }).join("\n\n");
+
+    console.log(`[5] Extracted text length: ${conversationText.length}`);
+
+    if (conversationText.length > 50000) {
+      conversationText = conversationText.substring(0, 49800) + "\n\n... [Conversation truncated for optimization] ...";
     }
 
     return {
-      conversationText: extractedText,
+      conversationText,
       sourceModel,
+      messagesCount: result.messages.length,
+      messages: result.messages,
     };
-
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+  } catch (error: any) {
+    if (error.name === "AbortError") {
       throw new Error("Conversation processing took too long. Please try again.");
     }
-    console.warn(`[conversationExtractor] Extraction failed or page blocked, using high-fidelity mock fallback. Error: ${error instanceof Error ? error.message : error}`);
-
-    // High-fidelity fallback simulated conversation logs for presentation/development
-    const mockConversations: Record<ModelId, string> = {
-      chatgpt: `User: I need to build a context transfer page for NexaFlow. It allows migrating chat histories.
-Assistant: That sounds like an excellent tool! To build this, you should structure it with:
-1. Model Selectors (From/To)
-2. Tabbed Inputs (Share Link, Raw Editor, File Upload)
-3. Interactive Pipeline Preview
-4. Active CTA Processing Button
-Let me know which frameworks you're using.
-User: I am using Next.js App Router, TypeScript, Tailwind CSS, and Firebase.`,
-      
-      gemini: `User: Tell me about Next.js 15 routing changes.
-Assistant: Google Gemini here. Next.js 15 introduces several key routing improvements, specifically around page caching and fetch rules:
-- Caching is disabled by default for GET handlers and client route cache.
-- Incremental Static Regeneration (ISR) and static pre-rendering are improved.
-- Async request APIs: headers, cookies, params are now promises.
-Let me know if you want code examples.`,
-      
-      claude: `User: Let's refactor this async function to use a wrapper.
-Assistant: Certainly. Wrapping asynchronous operations inside Try-Catch structures is standard:
-\`\`\`typescript
-export async function safeWrapper<T>(promise: Promise<T>): Promise<[T | null, Error | null]> {
-  try {
-    const data = await promise;
-    return [data, null];
-  } catch (err) {
-    return [null, err as Error];
-  }
-}
-\`\`\`
-User: Excellent, let's implement it for our Firestore fetches too.`,
-      
-      deepseek: `User: Optimize this SQL query for deep indexing.
-Assistant: To optimize deep indexes in PostgreSQL, use partial indexes or composite indexes depending on filter queries. For example, instead of querying all nodes, index on status fields.`,
-      
-      grok: `User: Summarize the latest space launch details.
-Assistant: Grok real-time retrieval indicates the SpaceX Falcon 9 rocket successfully launched 22 Starlink satellites into low-Earth orbit from Cape Canaveral at 10:15 PM ET.`,
-    };
-
-    return {
-      conversationText: mockConversations[sourceModel] || mockConversations["chatgpt"],
-      sourceModel,
-    };
+    console.error(`[conversationExtractor] Extraction failed:`, error.message || error);
+    throw error;
   }
 }

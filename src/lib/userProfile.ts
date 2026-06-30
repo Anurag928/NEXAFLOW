@@ -11,6 +11,15 @@ export interface UserProfile {
   onboardingCompleted: boolean;
   createdAt: unknown;
   updatedAt: unknown;
+  plan: "free" | "pro";
+  credits: {
+    total: number | null;
+    used: number;
+  };
+  subscription: {
+    status: "active" | "inactive";
+    expiresAt: unknown;
+  };
 }
 
 export type ProfileUser = Pick<User, "uid" | "displayName" | "email" | "photoURL">;
@@ -22,6 +31,15 @@ export type UserProfileUpdate = {
   selectedModels?: string[];
   purpose?: string;
   onboardingCompleted?: boolean;
+  plan?: "free" | "pro";
+  credits?: {
+    total: number | null;
+    used: number;
+  };
+  subscription?: {
+    status: "active" | "inactive";
+    expiresAt: unknown;
+  };
 };
 
 function userRef(uid: string) {
@@ -38,6 +56,15 @@ function defaultProfile(user: ProfileUser): UserProfile {
     onboardingCompleted: false,
     createdAt: null,
     updatedAt: null,
+    plan: "free",
+    credits: {
+      total: 5,
+      used: 0,
+    },
+    subscription: {
+      status: "inactive",
+      expiresAt: null,
+    },
   };
 }
 
@@ -56,6 +83,15 @@ function normalizeProfile(data: Partial<UserProfile>, fallback: UserProfile): Us
     onboardingCompleted: data.onboardingCompleted === true,
     createdAt: data.createdAt ?? fallback.createdAt,
     updatedAt: data.updatedAt ?? fallback.updatedAt,
+    plan: data.plan === "pro" ? "pro" : "free",
+    credits: {
+      total: data.credits?.total !== undefined ? data.credits.total : (data.plan === "pro" ? null : 5),
+      used: typeof data.credits?.used === "number" ? data.credits.used : 0,
+    },
+    subscription: {
+      status: data.subscription?.status === "active" ? "active" : "inactive",
+      expiresAt: data.subscription?.expiresAt ?? null,
+    },
   };
 }
 
@@ -88,6 +124,15 @@ export async function getUserProfile(uid: string): Promise<UserProfile | null> {
       onboardingCompleted: false,
       createdAt: null,
       updatedAt: null,
+      plan: "free",
+      credits: {
+        total: 5,
+        used: 0,
+      },
+      subscription: {
+        status: "inactive",
+        expiresAt: null,
+      },
     });
   } catch (error) {
     if (!isOfflineError(error)) {
@@ -177,6 +222,15 @@ export async function completeUserOnboarding(
       onboardingCompleted: true,
       createdAt: null,
       updatedAt: null,
+      plan: data.plan === "pro" ? "pro" : "free",
+      credits: {
+        total: data.credits?.total !== undefined ? data.credits.total : (data.plan === "pro" ? null : 5),
+        used: data.credits?.used ?? 0,
+      },
+      subscription: {
+        status: data.subscription?.status === "active" ? "active" : "inactive",
+        expiresAt: data.subscription?.expiresAt ?? null,
+      },
     }
   );
 }

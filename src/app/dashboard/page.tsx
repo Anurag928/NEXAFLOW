@@ -11,6 +11,7 @@ import { Loader2 } from "lucide-react";
 import DashboardHeader from "@/components/DashboardHeader";
 import HeroFeatureCard from "@/components/HeroFeatureCard";
 import StatsCard from "@/components/StatsCard";
+import CreditUsageCard from "@/components/CreditUsageCard";
 import RecentTransfers, { type TransferRecord } from "@/components/RecentTransfers";
 import MemoryCard from "@/components/MemoryCard";
 
@@ -257,10 +258,11 @@ export default function DashboardPage() {
       )}
       
       {/* Statistics Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
         <StatsCard label="AI Memory" value={`${memoryCount} stored`} index={0} />
         <StatsCard label="Transfers" value={`${transferCount} conversations`} index={1} />
         <StatsCard label="Connected Models" value={`${connectedCount} models`} index={2} />
+        <CreditUsageCard index={3} />
       </div>
 
       {/* Content Columns */}

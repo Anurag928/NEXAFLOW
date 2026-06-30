@@ -232,7 +232,7 @@ export default function OnboardingFlow() {
             </div>
 
             <h1 style={headingStyle}>
-              Welcome to your<br />AI memory layer.
+              Welcome to your<br />AI memory layer
             </h1>
 
             <p style={descStyle}>

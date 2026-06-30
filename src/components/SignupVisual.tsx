@@ -67,7 +67,7 @@ export default function SignupVisual() {
         animate="visible"
         className="text-5xl xl:text-6xl font-bold tracking-tighter text-white leading-[1.08] mb-5"
       >
-        Your AI<br />memory layer.
+        Your AI<br />memory layer
       </motion.h1>
 
       {/* Body copy */}
